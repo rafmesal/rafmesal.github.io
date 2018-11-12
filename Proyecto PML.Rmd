@@ -1,0 +1,133 @@
+---
+title: "Practical Machine Learning  Final Project"
+author: "Rafael Mejia"
+date: "11 de noviembre de 2018"
+output: html_document
+---
+
+#Practical Machine Learning - Final Project
+
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which they did the exercise.
+
+##Data sources
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/df_training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/df_testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+## 1. Load data
+```{r}
+#Libraries
+library("caret")
+
+#Download the data
+if(!file.exists("df_training.csv")){download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "df_training.csv")}
+
+if(!file.exists("df_testing.csv")){download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "df_testing.csv")}
+
+
+#Read the training data and replace empty values by NA
+trainingDataSet<- read.csv("df_training.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+testingDataSet<- read.csv("df_testing.csv", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+dim(trainingDataSet)
+```
+
+The dataset consist of 19,622 values of 160 variables.
+
+```{r}
+#View testing data dimensions
+dim(testingDataSet)
+```
+
+And the testing dataset consist of 20 values of 160 variables.
+
+## 2. Cleaning data
+Removing columns with missing values.
+```{r}
+trainingDataSet <- trainingDataSet[,(colSums(is.na(trainingDataSet)) == 0)]
+dim(trainingDataSet)
+```
+Now, we have a daset with 60 columns (variables).
+ 
+```{r}
+testingDataSet <- testingDataSet[,(colSums(is.na(testingDataSet)) == 0)]
+dim(testingDataSet)
+```
+And, we aplly the same column removing to the testing dataset, now with 60 columns.
+
+## 3. Pre-processing data
+```{r}
+numericIds <- which(lapply(trainingDataSet, class) %in% "numeric")
+
+preprocessModel <-preProcess(trainingDataSet[,numericIds],method=c('knnImpute', 'center', 'scale'))
+pre_trainingDataSet <- predict(preprocessModel, trainingDataSet[,numericIds])
+pre_trainingDataSet$classe <- trainingDataSet$classe
+
+pre_testingDataSet <-predict(preprocessModel,testingDataSet[,numericIds])
+
+#This will remove non-zero variables
+nzv <- nearZeroVar(pre_trainingDataSet,saveMetrics=TRUE)
+pre_trainingDataSet <- pre_trainingDataSet[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(pre_testingDataSet,saveMetrics=TRUE)
+pre_testingDataSet <- pre_testingDataSet[,nzv$nzv==FALSE]
+
+```
+
+## 4. Validate set
+
+```{r}
+set.seed(12031987)
+idsTrain<- createDataPartition(pre_trainingDataSet$classe, p=3/4, list=FALSE)
+training<- pre_trainingDataSet[idsTrain, ]
+validation <- pre_trainingDataSet[-idsTrain, ]
+dim(training) ; dim(validation)
+```
+
+## 5. Training model
+Training the model using random forest with cross validatio.
+```{r}
+library(randomForest)
+
+modelRF <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE, importance=TRUE )
+modelRF
+```
+
+## 6. Model Interpretation 
+```{r}
+varImpPlot(modelRF$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 0.6, main = "Importance of the Individual Principal Components")
+```
+This plot shows componentes by descending importance order.
+
+## 7.  Cross validation testing
+Aplying model to testing dataset to validate accuracy.
+```{r}
+predModelRF <- predict(modelRF, validation)
+confus <- confusionMatrix(validation$classe, predModelRF)
+confus$table
+```
+
+Now we caculate acccuracy.
+```{r}
+accMod <- postResample(validation$classe, predModelRF)
+modAcc <- accMod[[1]]
+modAcc
+```
+
+The model accuracy is over 99.7% based on cross validation.
+
+## 8. Applying model to test cases
+```{r}
+predictor_final <- predict(modelRF, pre_testingDataSet)
+predictor_final
+```
+
+And here are the results.
